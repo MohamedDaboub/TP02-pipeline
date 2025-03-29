@@ -2,11 +2,13 @@ const express = require('express');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Route principale
 app.get('/', (req, res) => {
-  res.send('TP02 - Jenkins - CI/CD - DevOps - 2025');
+  res.send('Bonjour depuis mon application Node.js!');
 });
 
-app.get('/TP02', (req, res) => {
+// Route health check
+app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK' });
 });
 
