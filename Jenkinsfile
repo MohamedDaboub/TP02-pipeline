@@ -27,40 +27,30 @@ pipeline {
             }
         }
 
-        // Étape 3 - Exécution des tests
+        // Étape 3 - Exécution des tests (version simplifiée)
         stage('Run Tests') {
             steps {
-        sh 'mkdir -p test-results/junit'
-        
-        // Exécute les tests
-        sh 'npm test'
-        
-        // Vérifie que le fichier a bien été créé (pour debug)
-        sh 'ls -la test-results/junit/ || true'
-        
-        // Archive les résultats
-        junit 'test-results/junit/junit.xml'
-        archiveArtifacts 'coverage/**/*'
+                sh 'npm test'
             }
         }
 
-        // Étape 4 - Build Docker (seulement si Docker est installé)
+        // Étape 4 - Build Docker
         stage('Build Docker Image') {
             when {
-                expression { isUnix() } // S'exécute seulement sur les agents Unix
+                expression { isUnix() }
             }
             steps {
                 script {
                     try {
                         docker.build(DOCKER_IMAGE)
-                    } catch (err) {
-                        echo "WARNING: Docker build failed - ${err}"
+                    } catch(err) {
+                        echo "Docker build skipped: ${err}"
                     }
                 }
             }
         }
 
-        // Étape 5 - Exécution du conteneur (optionnelle)
+        // Étape 5 - Exécution du conteneur
         stage('Run Container') {
             when {
                 expression { isUnix() && fileExists('/usr/bin/docker') }
@@ -81,23 +71,14 @@ pipeline {
         always {
             echo 'Nettoyage des ressources...'
             script {
-            // Vérifie l'existence des fichiers avant de les archiver
-            if (fileExists('test-results/junit/junit.xml')) {
-                junit 'test-results/junit/junit.xml'
-            } else {
-                echo "Avertissement: Fichier JUnit non trouvé"
-                sh 'find . -name "junit.xml" || true'  // Debug pour localiser le fichier
-            }
-            
-            if (fileExists('coverage/lcov.info')) {
-                archiveArtifacts 'coverage/**/*'
-            }
+                if (isUnix() && fileExists('/usr/bin/docker')) {
+                    sh 'docker container prune -f || true'
+                }
             }
             cleanWs()
         }
         success {
             echo 'SUCCÈS : Pipeline exécuté avec succès!'
-            echo "Application disponible sur http://localhost:3000 (si déployée)"
         }
         failure {
             echo 'ÉCHEC : Le pipeline a rencontré une erreur'
