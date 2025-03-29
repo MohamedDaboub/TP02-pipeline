@@ -1,59 +1,54 @@
 pipeline {
     agent any
 
-    options {
-        timeout(time: 30, unit: 'MINUTES')
-        skipDefaultCheckout(true) // Nous ferons le checkout manuellement
-    }
-
     environment {
         APP_NAME = "tp02-pipeline"
-        // Version simplifiée sans numéro de build pour les tests
-        DOCKER_IMAGE = "${APP_NAME}:latest" 
+        APP_PORT = "3000"
+        DOCKER_IMAGE = "${APP_NAME}:${env.BUILD_ID ?: 'latest'}"
+        LOG_FILE = "app.log"
     }
 
     stages {
-        stage('Préparation') {
+        // Étape 1 - Préparation
+        stage('Setup') {
             steps {
                 script {
-                    // Vérifie l'accès à Git
-                    checkout([
-                        $class: 'GitSCM',
-                        branches: [[name: 'main']],
-                        extensions: [],
-                        userRemoteConfigs: [[url: 'https://github.com/MohamedDaboub/TP02-pipeline.git']]
-                    ])
-                    
-                    // Détection Docker
+                    // Vérification Docker
                     env.DOCKER_AVAILABLE = sh(
                         script: 'command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1 && echo "yes" || echo "no"',
                         returnStdout: true
                     ).trim()
+
+                    // Checkout Git
+                    checkout scm
                 }
             }
         }
 
-        stage('Installation') {
+        // Étape 2 - Installation
+        stage('Install') {
             steps {
                 sh '''
-                echo "Nettoyage des anciennes dépendances..."
+                echo "=== Nettoyage ==="
                 rm -rf node_modules package-lock.json .npm
                 
-                echo "Installation des dépendances..."
-                npm install --no-audit --no-fund
+                echo "=== Installation ==="
+                npm install --no-audit --no-fund --loglevel=error
                 
-                echo "Fix des permissions..."
+                echo "=== Fix Permissions ==="
                 find node_modules/.bin -type f -exec chmod 755 {} +
                 '''
             }
         }
 
-        stage('Tests') {
+        // Étape 3 - Tests
+        stage('Test') {
             steps {
-                sh 'npm test || echo "⚠️ Tests échoués mais on continue"'
+                sh 'npm test || echo "⚠️ Tests échoués (mais on continue)"'
             }
         }
 
+        // Étape 4 - Build Docker (si disponible)
         stage('Build Docker') {
             when {
                 expression { env.DOCKER_AVAILABLE == 'yes' }
@@ -61,7 +56,7 @@ pipeline {
             steps {
                 script {
                     try {
-                        docker.build("${DOCKER_IMAGE}")
+                        docker.build(DOCKER_IMAGE)
                     } catch(Exception e) {
                         echo "❌ Erreur Docker Build: ${e.getMessage()}"
                         currentBuild.result = 'UNSTABLE'
@@ -70,23 +65,22 @@ pipeline {
             }
         }
 
-        stage('Déploiement') {
+        // Étape 5 - Déploiement
+        stage('Deploy') {
             steps {
                 script {
+                    // Nettoyage préalable
+                    sh """
+                    pkill -f "node.*app.js" || true
+                    docker stop ${APP_NAME} >/dev/null 2>&1 || true
+                    docker rm ${APP_NAME} >/dev/null 2>&1 || true
+                    """
+
+                    // Choix du mode de déploiement
                     if (env.DOCKER_AVAILABLE == 'yes') {
-                        try {
-                            sh """
-                            docker stop ${APP_NAME} >/dev/null 2>&1 || true
-                            docker rm ${APP_NAME} >/dev/null 2>&1 || true
-                            docker run -d --rm -p 3000:3000 --name ${APP_NAME} ${DOCKER_IMAGE}
-                            """
-                            echo "🟢 Application Docker démarrée sur http://localhost:3000"
-                        } catch(Exception e) {
-                            echo "❌ Erreur Docker Run: ${e.getMessage()}"
-                            runNodeApp() // Fallback sur Node
-                        }
+                        deployWithDocker()
                     } else {
-                        runNodeApp()
+                        deployWithNode()
                     }
                 }
             }
@@ -96,27 +90,69 @@ pipeline {
     post {
         always {
             script {
-                echo "Nettoyage en cours..."
-                // Nettoyage Docker si disponible
-                if (env.DOCKER_AVAILABLE == 'yes') {
-                    sh 'docker stop ${APP_NAME} >/dev/null 2>&1 || true'
-                }
-                // Nettoyage Node
-                sh 'pkill -f "node.*app.js" >/dev/null 2>&1 || true'
-                
-                // Archivage des logs
-                archiveArtifacts artifacts: '**/npm-debug.log,**/logs/*', allowEmptyArchive: true
+                echo "=== Nettoyage ==="
+                sh """
+                pkill -f "node.*app.js" || true
+                docker stop ${APP_NAME} >/dev/null 2>&1 || true
+                """
+                archiveArtifacts artifacts: "${LOG_FILE},${LOG_FILE}.old", allowEmptyArchive: true
             }
         }
     }
 }
 
-// Fonction helper pour lancer Node
-void runNodeApp() {
-    echo "🟡 Lancement via Node.js..."
-    sh '''
-    pkill -f "node.*app.js" >/dev/null 2>&1 || true
-    nohup npm start > app.log 2>&1 &
-    '''
-    echo "🔵 Application Node disponible sur http://localhost:3000"
+// Méthode de déploiement Docker
+void deployWithDocker() {
+    try {
+        sh """
+        docker run -d --rm \
+            -p ${APP_PORT}:${APP_PORT} \
+            --name ${APP_NAME} \
+            ${DOCKER_IMAGE}
+        """
+        
+        // Vérification
+        timeout(time: 1, unit: 'MINUTES') {
+            waitUntil {
+                def status = sh(
+                    script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:${APP_PORT}/health || echo '500'",
+                    returnStdout: true
+                ).trim()
+                return status == "200"
+            }
+        }
+        echo "✅ Docker: Application disponible sur http://localhost:${APP_PORT}"
+    } catch(Exception e) {
+        echo "❌ Échec Docker: ${e.getMessage()}"
+        deployWithNode() // Fallback sur Node
+    }
+}
+
+// Méthode de déploiement Node direct
+void deployWithNode() {
+    try {
+        // Rotation des logs
+        sh """
+        [ -f "${LOG_FILE}" ] && mv "${LOG_FILE}" "${LOG_FILE}.old"
+        nohup node app.js > "${LOG_FILE}" 2>&1 &
+        sleep 5
+        """
+        
+        // Vérification
+        def status = sh(
+            script: "curl -s -o /dev/null -w '%{http_code}' http://localhost:${APP_PORT}/health || echo '500'",
+            returnStdout: true
+        ).trim()
+        
+        if (status == "200") {
+            echo "✅ Node: Application disponible sur http://localhost:${APP_PORT}"
+            echo "🔍 Logs: ${WORKSPACE}/${LOG_FILE}"
+        } else {
+            error("❌ Échec du démarrage Node (HTTP ${status})")
+        }
+    } catch(Exception e) {
+        echo "📜 Dernières lignes des logs :"
+        sh "tail -n 30 ${LOG_FILE} || true"
+        error("❌ Crash de l'application: ${e.getMessage()}")
+    }
 }
