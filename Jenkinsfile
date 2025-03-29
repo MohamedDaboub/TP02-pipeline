@@ -30,10 +30,17 @@ pipeline {
         // Étape 3 - Exécution des tests
         stage('Run Tests') {
             steps {
-                sh 'mkdir -p test-results/junit'
-                sh 'npm test'
-                junit 'test-results/junit/junit.xml'
-                archiveArtifacts 'coverage/**/*'
+        sh 'mkdir -p test-results/junit'
+        
+        // Exécute les tests
+        sh 'npm test'
+        
+        // Vérifie que le fichier a bien été créé (pour debug)
+        sh 'ls -la test-results/junit/ || true'
+        
+        // Archive les résultats
+        junit 'test-results/junit/junit.xml'
+        archiveArtifacts 'coverage/**/*'
             }
         }
 
@@ -74,18 +81,17 @@ pipeline {
         always {
             echo 'Nettoyage des ressources...'
             script {
-                // Nettoyage Docker seulement si disponible
-                if (isUnix() && fileExists('/usr/bin/docker')) {
-                    sh 'docker container prune -f || true'
-                }
-                
-                // Archive les résultats même en cas d'échec
-                if (fileExists('test-results/junit/junit.xml')) {
-                    junit 'test-results/junit/junit.xml'
-                }
-                if (fileExists('coverage')) {
-                    archiveArtifacts 'coverage/**/*'
-                }
+            // Vérifie l'existence des fichiers avant de les archiver
+            if (fileExists('test-results/junit/junit.xml')) {
+                junit 'test-results/junit/junit.xml'
+            } else {
+                echo "Avertissement: Fichier JUnit non trouvé"
+                sh 'find . -name "junit.xml" || true'  // Debug pour localiser le fichier
+            }
+            
+            if (fileExists('coverage/lcov.info')) {
+                archiveArtifacts 'coverage/**/*'
+            }
             }
             cleanWs()
         }
