@@ -62,16 +62,24 @@ pipeline {
         }
 
         // Étape 4 - Build Docker
-        stage('Build') {
-            when {
-                expression { env.DOCKER_AVAILABLE == 'yes' && currentBuild.resultIsBetterOrEqualTo('SUCCESS') }
-            }
+        stage('Build Docker') {
             steps {
                 script {
-                    docker.build(DOCKER_IMAGE)
+                    if (env.DOCKER_AVAILABLE == 'yes') {
+                        try {
+                            // Build avec cache
+                            docker.build(DOCKER_IMAGE)
+                        } catch (err) {
+                            echo "⚠️ Fallback: Build sans cache"
+                            sh "docker build --no-cache -t ${DOCKER_IMAGE} ."
+                        }
+                    } else {
+                        echo "⚠️ Docker non disponible - Skip build"
+                    }
                 }
             }
         }
+
 
         // Étape 5 - Déploiement
         stage('Deploy') {
