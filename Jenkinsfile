@@ -63,9 +63,7 @@ pipeline {
             echo 'Nettoyage des ressources...'
             sh 'docker container prune -f'
             sh 'docker image prune -f --filter "until=24h"'
-                    // Archive toujours les résultats même en cas d'échec
-        junit 'reports/**/*.xml'
-        archiveArtifacts 'reports/**/*,coverage/**/*'
+                    // Archive toujours les résultats même en cas d'échec   
             cleanWs()
         }
         success {
