@@ -62,28 +62,33 @@ pipeline {
         }
 
                 // Étape 4 - Build Docker
-        stage('Build Docker Image') {
-            when {
-                expression { env.DOCKER_AVAILABLE == 'yes' }
-            }
-            steps {
-                script {
-                    // Vérification du Dockerfile
-                    if (!fileExists('Dockerfile')) {
-                        error("❌ Fichier Dockerfile introuvable")
-                    }
-
-                    // Construction avec log détaillé
-                    sh """
-                    docker build -t ${DOCKER_IMAGE} . | tee docker-build.log
-                    """
-                    archiveArtifacts 'docker-build.log'
-
-                    // Alternative avec la syntaxe Jenkins Docker
-                    // docker.build("${DOCKER_IMAGE}", ".")
-                }
-            }
+stage('Build Docker Image') {
+    when {
+        beforeAgent true
+        expression { 
+            // Vérifie aussi la présence du Dockerfile
+            env.DOCKER_AVAILABLE == 'yes' && 
+            fileExists('Dockerfile')
         }
+    }
+    steps {
+        script {
+            echo "=== Détection Docker ==="
+            sh '''
+            echo "Docker version:"
+            docker --version || true
+            echo "\nDocker info:"
+            docker info || true
+            '''
+            
+            echo "=== Construction de l'image ==="
+            sh """
+            docker build -t ${APP_NAME}:${BUILD_ID} . 2>&1 | tee docker-build.log
+            """
+            archiveArtifacts 'docker-build.log'
+        }
+    }
+}
 
 
         // Étape 5 - Déploiement
