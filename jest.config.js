@@ -5,12 +5,10 @@ module.exports = {
     reporters: [
       'default',
       ['jest-junit', { 
-        outputDirectory: 'reports',
+        outputDirectory: 'test-results/junit',
         outputName: 'junit.xml',
         suiteName: 'jest tests',
-        classNameTemplate: '{classname}-{title}',
-        titleTemplate: '{classname}-{title}',
-        ancestorSeparator: ' > '
+        classNameTemplate: '{classname}-{title}'
       }]
     ]
   };
