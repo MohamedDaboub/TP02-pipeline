@@ -9,7 +9,7 @@ pipeline {
         stage('Clone') {
             steps {
                 git branch: 'main',
-                url: 'https://github.com/votre-utilisateur/mon-app-node.git'
+                url: 'https://github.com/MohamedDaboub/TP02-pipeline.git'
             }
         }
 
@@ -28,7 +28,7 @@ pipeline {
         stage('Build Docker image') {
             steps {
                 script {
-                    docker.build("votre-utilisateur/mon-app-node:${env.BUILD_ID}")
+                    docker.build("MohamedDaboub/TP02-pipeline:${env.BUILD_ID}")
                 }
             }
         }
@@ -37,7 +37,7 @@ pipeline {
             steps {
                 script {
                     docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
-                        docker.image("votre-utilisateur/mon-app-node:${env.BUILD_ID}").push()
+                        docker.image("MohamedDaboub/TP02-pipeline:${env.BUILD_ID}").push()
                     }
                 }
             }
@@ -47,7 +47,7 @@ pipeline {
             steps {
                 sh 'docker stop mon-app-node || true'
                 sh 'docker rm mon-app-node || true'
-                sh 'docker run -d -p 3000:3000 --name mon-app-node votre-utilisateur/mon-app-node:${env.BUILD_ID}'
+                sh 'docker run -d -p 3000:3000 --name mon-app-node MohamedDaboub/TP02-pipeline:${env.BUILD_ID}'
             }
         }
     }
