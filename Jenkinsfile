@@ -34,34 +34,46 @@ pipeline {
             }
         }
 
-        // Étape 4 - Build Docker
-        stage('Build Docker Image') {
-            when {
-                expression { isUnix() }
-            }
+        // Étape 4 - Vérification Docker
+        stage('Check Docker') {
             steps {
                 script {
-                    try {
-                        docker.build(DOCKER_IMAGE)
-                    } catch(err) {
-                        echo "Docker build skipped: ${err}"
-                    }
+                    env.DOCKER_AVAILABLE = sh(
+                        script: 'docker --version >/dev/null 2>&1 && echo "yes" || echo "no"',
+                        returnStdout: true
+                    ).trim()
+                    echo "Docker disponible: ${env.DOCKER_AVAILABLE}"
                 }
             }
         }
 
-        // Étape 5 - Exécution du conteneur
-        stage('Run Container') {
+        // Étape 5 - Build Docker (conditionnelle)
+        stage('Build Docker Image') {
             when {
-                expression { isUnix() && fileExists('/usr/bin/docker') }
+                expression { env.DOCKER_AVAILABLE == 'yes' }
             }
             steps {
                 script {
-                    sh """
-                    docker stop ${APP_NAME} || true
-                    docker rm ${APP_NAME} || true
-                    docker run -d -p 3000:3000 --name ${APP_NAME} ${DOCKER_IMAGE}
-                    """
+                    docker.build(DOCKER_IMAGE)
+                }
+            }
+        }
+
+        // Étape 6 - Exécution (Docker ou Node direct)
+        stage('Run Application') {
+            steps {
+                script {
+                    if (env.DOCKER_AVAILABLE == 'yes') {
+                        sh """
+                        docker stop ${APP_NAME} || true
+                        docker rm ${APP_NAME} || true
+                        docker run -d -p 3000:3000 --name ${APP_NAME} ${DOCKER_IMAGE}
+                        """
+                        echo "🟢 Application démarrée via Docker sur http://localhost:3000"
+                    } else {
+                        sh 'nohup npm start &'
+                        echo "🟡 Application démarrée directement via Node (port 3000)"
+                    }
                 }
             }
         }
@@ -71,17 +83,18 @@ pipeline {
         always {
             echo 'Nettoyage des ressources...'
             script {
-                if (isUnix() && fileExists('/usr/bin/docker')) {
+                if (env.DOCKER_AVAILABLE == 'yes') {
                     sh 'docker container prune -f || true'
                 }
+                sh 'pkill -f "node.*app.js" || true'  // Tue les processus Node éventuels
             }
             cleanWs()
         }
         success {
-            echo 'SUCCÈS : Pipeline exécuté avec succès!'
+            echo '✅ SUCCÈS : Pipeline terminé avec succès'
         }
         failure {
-            echo 'ÉCHEC : Le pipeline a rencontré une erreur'
+            echo '❌ ÉCHEC : Erreur durant l\'exécution'
         }
     }
 }
