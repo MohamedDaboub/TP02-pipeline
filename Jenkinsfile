@@ -2,68 +2,63 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_HUB = credentials('docker-hub-credentials')
+        APP_NAME = "mon-app-node"
+        DOCKER_IMAGE = "${APP_NAME}:${env.BUILD_ID}"
     }
 
     stages {
-        stage('Clone') {
+       
+        stage('Clone Repository') {
             steps {
-                git branch: 'main',
-                url: 'https://github.com/user/TP02-pipeline.git'
+                git url: 'https://github.com/MohamedDaboub/TP02-pipeline.git', 
+                branch: 'main'
             }
         }
 
-        stage('Install dependencies') {
+        stage('Install Dependencies') {
             steps {
                 sh 'npm install'
             }
         }
 
-        stage('Run tests') {
+        stage('Run Tests') {
             steps {
                 sh 'npm test'
             }
         }
 
-        stage('Build Docker image') {
+        stage('Build Docker Image') {
             steps {
                 script {
-                    docker.build("votre-user/mon-app-node:${env.BUILD_ID}")
+                    docker.build(DOCKER_IMAGE)
                 }
             }
         }
 
-        stage('Push to Docker Hub') {
+        stage('Run Container') {
             steps {
                 script {
-                    docker.withRegistry('https://registry.hub.docker.com', 'docker-hub-credentials') {
-                        docker.image("votre-user/mon-app-node:${env.BUILD_ID}").push()
-                    }
+ 
+                    sh "docker stop ${APP_NAME} || true"
+                    sh "docker rm ${APP_NAME} || true"
+                    
+                    sh "docker run -d -p 3000:3000 --name ${APP_NAME} ${DOCKER_IMAGE}"
                 }
-            }
-        }
-
-        stage('Deploy to test') {
-            steps {
-                sh 'docker stop mon-app-node || true'
-                sh 'docker rm mon-app-node || true'
-                sh 'docker run -d -p 3000:3000 --name mon-app-node votre-user/mon-app-node:${env.BUILD_ID}'
             }
         }
     }
 
     post {
         always {
-            node {
-                echo 'Nettoyage après build...'
-                sh 'docker system prune -f'
-            }
+            echo 'Nettoyage...'
+            // Supprime les conteneurs arrêtés
+            sh 'docker container prune -f'
+            
+            // Nettoyage de l'espace de travail Jenkins
+            cleanWs()
         }
         success {
-            echo 'Pipeline exécuté avec succès!'
-        }
-        failure {
-            echo 'Échec du pipeline!'
+            echo 'Application disponible sur http://localhost:3000'
         }
     }
 }
