@@ -61,21 +61,26 @@ pipeline {
             }
         }
 
-        // Étape 4 - Build Docker
-        stage('Build Docker') {
+                // Étape 4 - Build Docker
+        stage('Build Docker Image') {
+            when {
+                expression { env.DOCKER_AVAILABLE == 'yes' }
+            }
             steps {
                 script {
-                    if (env.DOCKER_AVAILABLE == 'yes') {
-                        try {
-                            // Build avec cache
-                            docker.build(DOCKER_IMAGE)
-                        } catch (err) {
-                            echo "⚠️ Fallback: Build sans cache"
-                            sh "docker build --no-cache -t ${DOCKER_IMAGE} ."
-                        }
-                    } else {
-                        echo "⚠️ Docker non disponible - Skip build"
+                    // Vérification du Dockerfile
+                    if (!fileExists('Dockerfile')) {
+                        error("❌ Fichier Dockerfile introuvable")
                     }
+
+                    // Construction avec log détaillé
+                    sh """
+                    docker build -t ${DOCKER_IMAGE} . | tee docker-build.log
+                    """
+                    archiveArtifacts 'docker-build.log'
+
+                    // Alternative avec la syntaxe Jenkins Docker
+                    // docker.build("${DOCKER_IMAGE}", ".")
                 }
             }
         }
