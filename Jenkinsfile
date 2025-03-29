@@ -18,9 +18,12 @@ pipeline {
         // Étape 2 - Installation des dépendances
         stage('Install Dependencies') {
             steps {
-                sh 'rm -rf node_modules || true'
-                sh 'npm ci'
-                sh 'chmod -R 755 node_modules/.bin'
+                        sh '''
+        rm -rf node_modules
+        rm -f package-lock.json
+        npm install
+        chmod -R 755 node_modules/.bin
+        '''
             }
         }
 
