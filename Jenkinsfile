@@ -2,7 +2,7 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_HUB_CREDENTIALS = credentials('docker-hub-credentials')
+        DOCKER_HUB = credentials('docker-hub-credentials')
     }
 
     stages {
@@ -54,8 +54,10 @@ pipeline {
 
     post {
         always {
-            echo 'Nettoyage après build...'
-            sh 'docker system prune -f'
+            node {
+                echo 'Nettoyage après build...'
+                sh 'docker system prune -f || true'
+            }
         }
         success {
             echo 'Pipeline exécuté avec succès!'
